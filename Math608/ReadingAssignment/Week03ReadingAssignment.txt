@@ -1,0 +1,24 @@
+In the first paper, the author suggested using DSV (Delimiter-Separated Values) instead of CSV (Comma-Separated Values). I concur with the Author, by switching to DSV we can eliminate many problems that come with using CSV like inconsistency with delimiters, mismatched data, blank spaces in data, or simple data misinterpretation. By using non-printable ASCII characters, such as the ASCII 31 (Unit Separator) for field delimiters, data conflicts can be avoided. Using non-printable ASCII characters simplifies the reading and writing of data without the need to escape special characters.
+In the second paper, the case study is about the development and ethical implications of an AI chatbot called JEREMY, created to help catch cybercrime in Panoptica. I think JEREMY chat is an excellent AI to catch cybercriminals. Some of the good things about JEREMY are that it can work at scale and does not have any bias towards any humans or race.
+On the other hand, JEREMY can sometimes be too unbiased and tries to entrap and deceits normal people to commit crimes. It also raised Accountability concerns, as JEREMY is an AI Bot and it cannot be held accountable for the actions it does.
+According to me, a hybrid approach that combines AI efficiency and scalability with human judgment seems a more practical approach to using JEREMY. Using humans to monitor AI can yield better policing as Accountability is maintained.
+
+
+
+
+Data not shared about chats
+
+Training data for the model not shared
+
+Person may also me responsible
+
+If a person commits crime he should be held responsible.
+
+Motivation was lost.
+
+Jarvis and Tony stack.
+
+Forcing people to commit crime
+
+3 scenes. Full ai, half ai, only humans 
+

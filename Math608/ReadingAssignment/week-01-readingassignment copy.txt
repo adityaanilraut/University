@@ -1,0 +1,7 @@
+The paper presents a structured framework for addressing complex societal issues using data science in real-world applications. The framework iteratively approaches problems, encompassing steps such as problem identification, data discovery, data ingestion, governance, data wrangling, fitness for use assessment, statistical modeling, and ethical consideration.
+
+A case study on obesity rates in Fairfax County illustrates the framework’s practical implementation. The researchers emphasize the relationship between fast food accessibility and obesity. However, it’s important to note that causation does not necessarily imply correlation. Other factors like socioeconomic status and lifestyle may also contribute to obesity. Additionally, the study lacked access to personal-level information, such as body mass index or individual height and weight.
+
+One aspect I appreciated in the paper was its data collection and discovery approach. The researchers repurposed existing data to align with the framework and utilized synthetic information to enhance geographical data. The framework emphasizes transparency and reproducibility of results by documenting research decisions.
+
+Overall, the paper presents a well-rounded approach to applying data science in real-world settings. It highlights the significance of ethical responsibilities in data collection and usage, providing valuable insights for researchers to adopt more ethical and socially responsible data science practices.

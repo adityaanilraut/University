@@ -1,0 +1,7 @@
+The paper explores the ethical issues surrounding the use of machine learning algorithms in risk assessment, particularly in the criminal justice system. The paper highlights two case studies, one with the biased YouTube algorithm and the second with the Northpointe-made software COMPAS.
+
+In the YouTube case, as the algorithm was trained on the user feedback, which in this case was biased and had personal prejudices, the algorithm started flagging the LGBTQ+ content as inappropriate. This meant the creators would lose the ability to make money on any video related to  LGBTQ+. 
+
+In the Northpointe case study, you are relying on software to assess risk assessments of convicted criminals is not a good idea.When it comes to labeling defendants, the Algorithm cited 47.7% of white defendants labeled low-risk reoffended, compared to 28.0% of African American defendants. Because of the bias, COMPAS gave a minimum score for white defendants and a maximum score for black defendants.
+
+Some Solutions to reduce bias in COMPAS, Northpointe could adopt several unbiased strategies. They can ensure that training data is representative and free from systemic biases. They could employ fairness-aware algorithms that adjust predictions to reduce disparities in how different racial groups are treated. The company can also retrain its algorithm with newer and fairer data standards.
