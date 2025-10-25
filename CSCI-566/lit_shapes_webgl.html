@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lit Cones and Cylinders</title>
+    <script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/webgl-utils.js"></script>
+    <script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/webgl-debug.js"></script>
+    <script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/cuon-matrix.js"></script>
+    <script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/cuon-utils.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .controls { margin: 10px 0; }
+        .slider-group { margin: 10px 0; }
+        label { display: inline-block; width: 150px; }
+        input[type="range"] { width: 200px; }
+        .value { font-weight: bold; color: #333; }
+    </style>
+</head>
+
+<body onload="main();">
+    <h2>WebGL Lit Shapes with Controllable Lighting</h2>
+    
+    <!-- Light Position Controls -->
+    <div class="controls">
+        <h3>Light 1 Position (White Light)</h3>
+        <div class="slider-group">
+            <label for="lightX">X Position:</label>
+            <input type="range" id="lightX" min="-10" max="10" value="3" step="0.1" oninput="updateLight()">
+            <span class="value" id="lightXValue">3.0</span>
+        </div>
+        <div class="slider-group">
+            <label for="lightY">Y Position:</label>
+            <input type="range" id="lightY" min="-10" max="10" value="3" step="0.1" oninput="updateLight()">
+            <span class="value" id="lightYValue">3.0</span>
+        </div>
+        <div class="slider-group">
+            <label for="lightZ">Z Position:</label>
+            <input type="range" id="lightZ" min="-10" max="10" value="3" step="0.1" oninput="updateLight()">
+            <span class="value" id="lightZValue">3.0</span>
+        </div>
+        
+        <!-- Extra Credit: RGB Color Controls -->
+        <h3>Light 1 Color (Extra Credit)</h3>
+        <div class="slider-group">
+            <label for="lightR">Red:</label>
+            <input type="range" id="lightR" min="0" max="1" value="1" step="0.01" oninput="updateLight()">
+            <span class="value" id="lightRValue">1.00</span>
+        </div>
+        <div class="slider-group">
+            <label for="lightG">Green:</label>
+            <input type="range" id="lightG" min="0" max="1" value="1" step="0.01" oninput="updateLight()">
+            <span class="value" id="lightGValue">1.00</span>
+        </div>
+        <div class="slider-group">
+            <label for="lightB">Blue:</label>
+            <input type="range" id="lightB" min="0" max="1" value="1" step="0.01" oninput="updateLight()">
+            <span class="value" id="lightBValue">1.00</span>
+        </div>
+    </div>
+
+    <!-- WebGL Canvas -->
+    <canvas id="webgl" width="800" height="600"></canvas>
+    
+    <p>Scene contains: Sphere (red), Cone (green), Cylinder (blue)<br>
+    Light 1: Controllable white/colored light | Light 2: Fixed blue light at (-3, 2, 3)</p>
+
+<script>
+// Vertex shader source
+var VSHADER_SOURCE = `
+    attribute vec4 a_Position;
+    attribute vec4 a_Normal;
+    
+    uniform mat4 u_MvpMatrix;
+    uniform mat4 u_ModelMatrix;
+    uniform mat4 u_NormalMatrix;
+    
+    varying vec3 v_Position;
+    varying vec3 v_Normal;
+    
+    void main() {
+        gl_Position = u_MvpMatrix * a_Position;
+        v_Position = vec3(u_ModelMatrix * a_Position);
+        v_Normal = normalize(vec3(u_NormalMatrix * a_Normal));
+    }
+`;
+
+// Fragment shader source
+var FSHADER_SOURCE = `
+    precision mediump float;
+    
+    uniform vec3 u_LightPosition1;
+    uniform vec3 u_LightColor1;
+    uniform vec3 u_LightPosition2;
+    uniform vec3 u_LightColor2;
+    uniform vec3 u_AmbientLight;
+    uniform vec3 u_DiffuseColor;
+    
+    varying vec3 v_Position;
+    varying vec3 v_Normal;
+    
+    void main() {
+        vec3 normal = normalize(v_Normal);
+        
+        // Ambient light
+        vec3 ambient = u_AmbientLight * u_DiffuseColor;
+        
+        // Diffuse light from light source 1
+        vec3 lightDirection1 = normalize(u_LightPosition1 - v_Position);
+        float nDotL1 = max(dot(lightDirection1, normal), 0.0);
+        vec3 diffuse1 = u_LightColor1 * u_DiffuseColor * nDotL1;
+        
+        // Diffuse light from light source 2
+        vec3 lightDirection2 = normalize(u_LightPosition2 - v_Position);
+        float nDotL2 = max(dot(lightDirection2, normal), 0.0);
+        vec3 diffuse2 = u_LightColor2 * u_DiffuseColor * nDotL2;
+        
+        vec3 color = ambient + diffuse1 + diffuse2;
+        gl_FragColor = vec4(color, 1.0);
+    }
+`;
+
+var gl;
+var program;
+var sphere, cone, cylinder;
+
+function main() {
+    var canvas = document.getElementById('webgl');
+    gl = getWebGLContext(canvas);
+    
+    if (!gl) {
+        console.log('Failed to get WebGL context');
+        return;
+    }
+    
+    // Initialize shaders
+    if (!initShaders(gl, VSHADER_SOURCE, FSHADER_SOURCE)) {
+        console.log('Failed to initialize shaders');
+        return;
+    }
+    
+    program = gl.program;
+    
+    // Create shapes
+    sphere = createSphere(32, 16);
+    cone = createCone(32, 16);
+    cylinder = createCylinder(32, 16);
+    
+    // Enable depth testing
+    gl.enable(gl.DEPTH_TEST);
+    
+    // Set clear color
+    gl.clearColor(0.1, 0.1, 0.2, 1.0);
+    
+    // Start rendering
+    draw();
+}
+
+function createSphere(longitudeBands, latitudeBands) {
+    var vertices = [];
+    var normals = [];
+    var indices = [];
+    
+    // Generate vertices and normals
+    for (var lat = 0; lat <= latitudeBands; lat++) {
+        var theta = lat * Math.PI / latitudeBands;
+        var sinTheta = Math.sin(theta);
+        var cosTheta = Math.cos(theta);
+        
+        for (var lon = 0; lon <= longitudeBands; lon++) {
+            var phi = lon * 2 * Math.PI / longitudeBands;
+            var sinPhi = Math.sin(phi);
+            var cosPhi = Math.cos(phi);
+            
+            var x = cosPhi * sinTheta;
+            var y = cosTheta;
+            var z = sinPhi * sinTheta;
+            
+            vertices.push(x, y, z);
+            normals.push(x, y, z);
+        }
+    }
+    
+    // Generate indices
+    for (var lat = 0; lat < latitudeBands; lat++) {
+        for (var lon = 0; lon < longitudeBands; lon++) {
+            var first = lat * (longitudeBands + 1) + lon;
+            var second = first + longitudeBands + 1;
+            
+            indices.push(first, second, first + 1);
+            indices.push(second, second + 1, first + 1);
+        }
+    }
+    
+    return {
+        vertices: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        indices: new Uint16Array(indices)
+    };
+}
+
+function createCone(segments, stacks) {
+    var vertices = [];
+    var normals = [];
+    var indices = [];
+    
+    // Tip vertex
+    vertices.push(0, 1, 0);
+    normals.push(0, 1, 0);
+    
+    // Generate vertices for stacks
+    for (var stack = 0; stack <= stacks; stack++) {
+        var y = 1 - (stack / stacks) * 2; // From 1 to -1
+        var radius = (stacks - stack) / stacks; // Decreases from 1 to 0
+        
+        for (var seg = 0; seg <= segments; seg++) {
+            var angle = seg * 2 * Math.PI / segments;
+            var x = radius * Math.cos(angle);
+            var z = radius * Math.sin(angle);
+            
+            vertices.push(x, y, z);
+            
+            // Normal calculation for cone
+            var length = Math.sqrt(x * x + z * z);
+            if (length > 0) {
+                normals.push(x / length * 0.7071, 0.7071, z / length * 0.7071);
+            } else {
+                normals.push(0, 1, 0);
+            }
+        }
+    }
+    
+    // Generate indices
+    for (var stack = 0; stack < stacks; stack++) {
+        for (var seg = 0; seg < segments; seg++) {
+            var current = stack * (segments + 1) + seg + 1;
+            var next = current + segments + 1;
+            
+            indices.push(current, next, current + 1);
+            indices.push(next, next + 1, current + 1);
+        }
+    }
+    
+    return {
+        vertices: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        indices: new Uint16Array(indices)
+    };
+}
+
+function createCylinder(segments, stacks) {
+    var vertices = [];
+    var normals = [];
+    var indices = [];
+    
+    // Generate vertices for stacks
+    for (var stack = 0; stack <= stacks; stack++) {
+        var y = 1 - (stack / stacks) * 2; // From 1 to -1
+        var radius = 1; // Constant radius
+        
+        for (var seg = 0; seg <= segments; seg++) {
+            var angle = seg * 2 * Math.PI / segments;
+            var x = radius * Math.cos(angle);
+            var z = radius * Math.sin(angle);
+            
+            vertices.push(x, y, z);
+            normals.push(x, 0, z);
+        }
+    }
+    
+    // Generate indices
+    for (var stack = 0; stack < stacks; stack++) {
+        for (var seg = 0; seg < segments; seg++) {
+            var current = stack * (segments + 1) + seg;
+            var next = current + segments + 1;
+            
+            indices.push(current, next, current + 1);
+            indices.push(next, next + 1, current + 1);
+        }
+    }
+    
+    return {
+        vertices: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        indices: new Uint16Array(indices)
+    };
+}
+
+function drawShape(shape, modelMatrix, color) {
+    // Create and bind vertex buffer
+    var vertexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, shape.vertices, gl.STATIC_DRAW);
+    
+    var a_Position = gl.getAttribLocation(program, 'a_Position');
+    gl.vertexAttribPointer(a_Position, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(a_Position);
+    
+    // Create and bind normal buffer
+    var normalBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, shape.normals, gl.STATIC_DRAW);
+    
+    var a_Normal = gl.getAttribLocation(program, 'a_Normal');
+    gl.vertexAttribPointer(a_Normal, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(a_Normal);
+    
+    // Create and bind index buffer
+    var indexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, shape.indices, gl.STATIC_DRAW);
+    
+    // Set matrices
+    var mvpMatrix = new Matrix4();
+    var viewMatrix = new Matrix4();
+    var projMatrix = new Matrix4();
+    
+    viewMatrix.setLookAt(0, 3, 8, 0, 0, 0, 0, 1, 0);
+    projMatrix.setPerspective(45, 800/600, 0.1, 100);
+    mvpMatrix.set(projMatrix).multiply(viewMatrix).multiply(modelMatrix);
+    
+    var u_MvpMatrix = gl.getUniformLocation(program, 'u_MvpMatrix');
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
+    
+    var u_ModelMatrix = gl.getUniformLocation(program, 'u_ModelMatrix');
+    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    
+    var normalMatrix = new Matrix4();
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    var u_NormalMatrix = gl.getUniformLocation(program, 'u_NormalMatrix');
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
+    
+    // Set color
+    var u_DiffuseColor = gl.getUniformLocation(program, 'u_DiffuseColor');
+    gl.uniform3fv(u_DiffuseColor, color);
+    
+    // Draw
+    gl.drawElements(gl.TRIANGLES, shape.indices.length, gl.UNSIGNED_SHORT, 0);
+}
+
+function draw() {
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    
+    // Set lighting uniforms
+    updateLightingUniforms();
+    
+    // Draw sphere (red)
+    var sphereMatrix = new Matrix4();
+    sphereMatrix.setTranslate(-3, 0, 0);
+    drawShape(sphere, sphereMatrix, [0.8, 0.2, 0.2]);
+    
+    // Draw cone (green)
+    var coneMatrix = new Matrix4();
+    coneMatrix.setTranslate(0, 0, 0);
+    drawShape(cone, coneMatrix, [0.2, 0.8, 0.2]);
+    
+    // Draw cylinder (blue)
+    var cylinderMatrix = new Matrix4();
+    cylinderMatrix.setTranslate(3, 0, 0);
+    drawShape(cylinder, cylinderMatrix, [0.2, 0.2, 0.8]);
+}
+
+function updateLightingUniforms() {
+    // Light 1 (controllable)
+    var lightX = parseFloat(document.getElementById('lightX').value);
+    var lightY = parseFloat(document.getElementById('lightY').value);
+    var lightZ = parseFloat(document.getElementById('lightZ').value);
+    var lightR = parseFloat(document.getElementById('lightR').value);
+    var lightG = parseFloat(document.getElementById('lightG').value);
+    var lightB = parseFloat(document.getElementById('lightB').value);
+    
+    var u_LightPosition1 = gl.getUniformLocation(program, 'u_LightPosition1');
+    gl.uniform3f(u_LightPosition1, lightX, lightY, lightZ);
+    
+    var u_LightColor1 = gl.getUniformLocation(program, 'u_LightColor1');
+    gl.uniform3f(u_LightColor1, lightR, lightG, lightB);
+    
+    // Light 2 (fixed blue light)
+    var u_LightPosition2 = gl.getUniformLocation(program, 'u_LightPosition2');
+    gl.uniform3f(u_LightPosition2, -3, 2, 3);
+    
+    var u_LightColor2 = gl.getUniformLocation(program, 'u_LightColor2');
+    gl.uniform3f(u_LightColor2, 0.3, 0.3, 1.0);
+    
+    // Ambient light
+    var u_AmbientLight = gl.getUniformLocation(program, 'u_AmbientLight');
+    gl.uniform3f(u_AmbientLight, 0.2, 0.2, 0.2);
+}
+
+function updateLight() {
+    // Update display values
+    document.getElementById('lightXValue').textContent = document.getElementById('lightX').value;
+    document.getElementById('lightYValue').textContent = document.getElementById('lightY').value;
+    document.getElementById('lightZValue').textContent = document.getElementById('lightZ').value;
+    document.getElementById('lightRValue').textContent = parseFloat(document.getElementById('lightR').value).toFixed(2);
+    document.getElementById('lightGValue').textContent = parseFloat(document.getElementById('lightG').value).toFixed(2);
+    document.getElementById('lightBValue').textContent = parseFloat(document.getElementById('lightB').value).toFixed(2);
+    
+    // Redraw scene
+    draw();
+}
+
+</script>
+
+</body>
+</html>

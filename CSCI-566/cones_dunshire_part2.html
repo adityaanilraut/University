@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Cones of Dunshire Part II</title>
+
+<script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/webgl-utils.js"></script>
+<script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/webgl-debug.js"></script>
+<script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/cuon-matrix.js"></script>
+<script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/cuon-utils.js"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #222;
+    color: #fff;
+}
+canvas {
+    border: 2px solid #444;
+}
+.info {
+    margin-top: 10px;
+    padding: 10px;
+    background: #333;
+    border-radius: 5px;
+}
+</style>
+
+</head>
+
+<body onload="main();">
+
+<h2>Cones of Dunshire - Part II</h2>
+<canvas id="webgl" width="800" height="600"></canvas>
+
+<div class="info">
+    <strong>Controls:</strong><br>
+    W/S: Move forward/backward<br>
+    ↑/↓: Look up/down<br>
+    ←/→: Look left/right
+</div>
+
+<script>
+// Vertex Shader
+var VSHADER_SOURCE = `
+    attribute vec4 a_Position;
+    attribute vec4 a_Normal;
+    attribute vec2 a_TexCoord;
+    uniform mat4 u_ModelMatrix;
+    uniform mat4 u_ViewMatrix;
+    uniform mat4 u_ProjMatrix;
+    uniform mat4 u_NormalMatrix;
+    varying vec3 v_Normal;
+    varying vec3 v_Position;
+    varying vec2 v_UV;
+    void main() {
+        gl_Position = u_ProjMatrix * u_ViewMatrix * u_ModelMatrix * a_Position;
+        v_Position = vec3(u_ModelMatrix * a_Position);
+        v_Normal = normalize(vec3(u_NormalMatrix * vec4(a_Normal.xyz, 0.0)));
+        v_UV = a_TexCoord;
+    }
+`;
+
+// Fragment Shader
+var FSHADER_SOURCE = `
+    precision mediump float;
+    uniform vec3 u_LightColor1;
+    uniform vec3 u_LightPosition1;
+    uniform vec3 u_LightColor2;
+    uniform vec3 u_LightPosition2;
+    uniform vec3 u_AmbientLight;
+    uniform vec3 u_DiffuseColor;
+    uniform vec3 u_CameraPosition;
+    uniform sampler2D u_Sampler;
+    uniform int u_UseTexture;
+    uniform int u_UseReflection;
+    uniform int u_UseProcedural;
+    varying vec3 v_Normal;
+    varying vec3 v_Position;
+    varying vec2 v_UV;
+    
+    void main() {
+        vec3 normal = normalize(v_Normal);
+        vec3 viewDir = normalize(u_CameraPosition - v_Position);
+        
+        // Ambient
+        vec3 ambient = u_AmbientLight * u_DiffuseColor;
+        
+        // Light 1 - Diffuse and Specular
+        vec3 lightDir1 = normalize(u_LightPosition1 - v_Position);
+        float nDotL1 = max(dot(lightDir1, normal), 0.0);
+        vec3 diffuse1 = u_LightColor1 * u_DiffuseColor * nDotL1;
+        
+        vec3 reflectDir1 = reflect(-lightDir1, normal);
+        float spec1 = pow(max(dot(viewDir, reflectDir1), 0.0), 32.0);
+        vec3 specular1 = u_LightColor1 * spec1 * 0.5;
+        
+        // Light 2 - Diffuse and Specular
+        vec3 lightDir2 = normalize(u_LightPosition2 - v_Position);
+        float nDotL2 = max(dot(lightDir2, normal), 0.0);
+        vec3 diffuse2 = u_LightColor2 * u_DiffuseColor * nDotL2;
+        
+        vec3 reflectDir2 = reflect(-lightDir2, normal);
+        float spec2 = pow(max(dot(viewDir, reflectDir2), 0.0), 32.0);
+        vec3 specular2 = u_LightColor2 * spec2 * 0.5;
+        
+        vec3 finalColor = ambient + diffuse1 + diffuse2 + specular1 + specular2;
+        
+        // Floor texture
+        if (u_UseTexture == 1) {
+            vec4 texColor = texture2D(u_Sampler, v_UV);
+            finalColor = texColor.rgb * (ambient + diffuse1 + diffuse2) + specular1 + specular2;
+        }
+        
+        // Reflection mapping
+        if (u_UseReflection == 1) {
+            vec3 V = normalize(v_Position - u_CameraPosition);
+            vec3 reflectview = normalize(reflect(V, normal));
+            float u = -(v_Position.y + 2.0) / reflectview.y;
+            vec2 reflmapresult = v_Position.xz - u * reflectview.xz;
+            vec4 texcolor = texture2D(u_Sampler, reflmapresult / 16.0) * pow(max(-normal.y, 0.0), 2.0);
+            finalColor += texcolor.rgb * 0.3;
+        }
+        
+        // Procedural texture
+        if (u_UseProcedural == 1) {
+            vec2 st = v_UV;
+            vec2 resolution = vec2(1.0, 1.0);
+            
+            // Mirror tile function
+            st *= 5.0;
+            if (fract(st.y * 0.5) > 0.5) {
+                st.x = st.x + 0.5;
+                st.y = 1.0 - st.y;
+            }
+            st = fract(st);
+            
+            // Zigzag pattern
+            float x = st.x * 2.0;
+            float a = floor(1.0 + sin(x * 3.14159));
+            float b = floor(1.0 + sin((x + 1.0) * 3.14159));
+            float f = fract(x);
+            float pattern = smoothstep(mix(a, b, f) - 0.01, mix(a, b, f), st.y);
+            
+            if (pattern > 0.95) {
+                discard;
+            }
+            
+            finalColor *= (1.0 - pattern * 0.5);
+        }
+        
+        gl_FragColor = vec4(finalColor, 1.0);
+    }
+`;
+
+var gl;
+var modelMatrix = new Matrix4();
+var viewMatrix = new Matrix4();
+var projMatrix = new Matrix4();
+var normalMatrix = new Matrix4();
+
+var u_ModelMatrix, u_ViewMatrix, u_ProjMatrix, u_NormalMatrix;
+var u_LightColor1, u_LightPosition1;
+var u_LightColor2, u_LightPosition2;
+var u_AmbientLight, u_DiffuseColor, u_CameraPosition;
+var u_Sampler, u_UseTexture, u_UseReflection, u_UseProcedural;
+
+// Camera variables
+var cameraX = 0, cameraY = 3, cameraZ = 10;
+var lookAtX = 0, lookAtY = 0, lookAtZ = 0;
+var moveSpeed = 0.2;
+var lookSpeed = 0.3;
+
+var texture;
+
+function main() {
+    var canvas = document.getElementById('webgl');
+    gl = getWebGLContext(canvas);
+    
+    if (!gl) {
+        console.log('Failed to get WebGL context');
+        return;
+    }
+    
+    if (!initShaders(gl, VSHADER_SOURCE, FSHADER_SOURCE)) {
+        console.log('Failed to initialize shaders');
+        return;
+    }
+    
+    // Get uniform locations
+    u_ModelMatrix = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
+    u_ViewMatrix = gl.getUniformLocation(gl.program, 'u_ViewMatrix');
+    u_ProjMatrix = gl.getUniformLocation(gl.program, 'u_ProjMatrix');
+    u_NormalMatrix = gl.getUniformLocation(gl.program, 'u_NormalMatrix');
+    u_LightColor1 = gl.getUniformLocation(gl.program, 'u_LightColor1');
+    u_LightPosition1 = gl.getUniformLocation(gl.program, 'u_LightPosition1');
+    u_LightColor2 = gl.getUniformLocation(gl.program, 'u_LightColor2');
+    u_LightPosition2 = gl.getUniformLocation(gl.program, 'u_LightPosition2');
+    u_AmbientLight = gl.getUniformLocation(gl.program, 'u_AmbientLight');
+    u_DiffuseColor = gl.getUniformLocation(gl.program, 'u_DiffuseColor');
+    u_CameraPosition = gl.getUniformLocation(gl.program, 'u_CameraPosition');
+    u_Sampler = gl.getUniformLocation(gl.program, 'u_Sampler');
+    u_UseTexture = gl.getUniformLocation(gl.program, 'u_UseTexture');
+    u_UseReflection = gl.getUniformLocation(gl.program, 'u_UseReflection');
+    u_UseProcedural = gl.getUniformLocation(gl.program, 'u_UseProcedural');
+    
+    // Set projection matrix
+    projMatrix.setPerspective(45, canvas.width/canvas.height, 0.1, 100);
+    gl.uniformMatrix4fv(u_ProjMatrix, false, projMatrix.elements);
+    
+    // Set lighting
+    gl.uniform3f(u_AmbientLight, 0.2, 0.2, 0.2);
+    gl.uniform3f(u_LightColor1, 1.0, 1.0, 1.0);
+    gl.uniform3f(u_LightPosition1, 3.0, 4.0, 3.0);
+    gl.uniform3f(u_LightColor2, 0.4, 0.4, 0.8);
+    gl.uniform3f(u_LightPosition2, -3.0, 3.0, 3.0);
+    
+    // Initialize texture
+    initTexture();
+    
+    // Setup keyboard controls
+    document.addEventListener('keydown', handleKeyDown);
+    
+    gl.clearColor(0.1, 0.1, 0.15, 1.0);
+    gl.enable(gl.DEPTH_TEST);
+    
+    draw();
+}
+
+function handleKeyDown(ev) {
+    var forward = new Vector3([lookAtX - cameraX, 0, lookAtZ - cameraZ]);
+    forward.normalize();
+    
+    switch(ev.keyCode) {
+        case 87: // W - move forward
+            cameraX += forward.elements[0] * moveSpeed;
+            cameraZ += forward.elements[2] * moveSpeed;
+            lookAtX += forward.elements[0] * moveSpeed;
+            lookAtZ += forward.elements[2] * moveSpeed;
+            break;
+        case 83: // S - move backward
+            cameraX -= forward.elements[0] * moveSpeed;
+            cameraZ -= forward.elements[2] * moveSpeed;
+            lookAtX -= forward.elements[0] * moveSpeed;
+            lookAtZ -= forward.elements[2] * moveSpeed;
+            break;
+        case 38: // Up arrow - look up
+            lookAtY += lookSpeed;
+            break;
+        case 40: // Down arrow - look down
+            lookAtY -= lookSpeed;
+            break;
+        case 37: // Left arrow - look left
+            lookAtX -= lookSpeed;
+            break;
+        case 39: // Right arrow - look right
+            lookAtX += lookSpeed;
+            break;
+    }
+    draw();
+}
+
+function random_func(x, y) {
+    return Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453123) % 1.0;
+}
+
+function noise_func(st_x, st_y) {
+    var i_x = Math.floor(st_x);
+    var i_y = Math.floor(st_y);
+    var f_x = st_x - i_x;
+    var f_y = st_y - i_y;
+    
+    var a = random_func(i_x, i_y);
+    var b = random_func(i_x + 1.0, i_y);
+    var c = random_func(i_x, i_y + 1.0);
+    var d = random_func(i_x + 1.0, i_y + 1.0);
+    
+    var u_x = f_x * f_x * (3.0 - 2.0 * f_x);
+    var u_y = f_y * f_y * (3.0 - 2.0 * f_y);
+    
+    return a * (1.0 - u_x) * (1.0 - u_y) +
+           b * u_x * (1.0 - u_y) +
+           c * (1.0 - u_x) * u_y +
+           d * u_x * u_y;
+}
+
+function fbm(st_x, st_y) {
+    var value = 0.0;
+    var amplitude = 0.5;
+    
+    for (var i = 0; i < 6; i++) {
+        value += amplitude * noise_func(st_x, st_y);
+        st_x *= 2.0;
+        st_y *= 2.0;
+        amplitude *= 0.5;
+    }
+    return value;
+}
+
+function smoothstep_func(edge0, edge1, x) {
+    var t = Math.max(0.0, Math.min(1.0, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3.0 - 2.0 * t);
+}
+
+function edge_func(v, center, edge0, edge1) {
+    return 1.0 - smoothstep_func(edge0, edge1, Math.abs(v - center));
+}
+
+function initTexture() {
+    texture = gl.createTexture();
+    
+    // Generate marble texture procedurally
+    var size = 512;
+    var data = new Uint8Array(size * size * 4);
+    
+    for (var y = 0; y < size; y++) {
+        for (var x = 0; x < size; x++) {
+            var st_x = (x / size) * (size / size);
+            var st_y = y / size;
+            
+            var v0 = edge_func(fbm(st_x * 18.0, st_y * 18.0), 0.5, 0.0, 0.2);
+            var v1 = smoothstep_func(0.5, 0.51, fbm(st_x * 14.0, st_y * 14.0));
+            var v2 = edge_func(fbm(st_x * 14.0, st_y * 14.0), 0.5, 0.0, 0.05);
+            var v3 = edge_func(fbm(st_x * 14.0, st_y * 14.0), 0.5, 0.0, 0.25);
+            
+            var col = 1.0;
+            col -= v0 * 0.75;
+            col = col * (1.0 - v1) + 0.97 * v1;
+            col = col * (1.0 - v2) + 0.51 * v2;
+            col -= v3 * 0.2;
+            
+            var idx = (y * size + x) * 4;
+            data[idx] = col * 255;
+            data[idx + 1] = col * 255;
+            data[idx + 2] = col * 255;
+            data[idx + 3] = 255;
+        }
+    }
+    
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    
+    draw();
+}
+
+function draw() {
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    
+    // Update view matrix
+    viewMatrix.setLookAt(cameraX, cameraY, cameraZ, lookAtX, lookAtY, lookAtZ, 0, 1, 0);
+    gl.uniformMatrix4fv(u_ViewMatrix, false, viewMatrix.elements);
+    gl.uniform3f(u_CameraPosition, cameraX, cameraY, cameraZ);
+    
+    // Draw floor
+    modelMatrix.setTranslate(0, -2, 0);
+    modelMatrix.scale(20, 1, 20);
+    drawShape(createPlane(), [0.5, 0.5, 0.5], 1, 0, 0);
+    
+    // Draw sphere (red) with reflection
+    modelMatrix.setTranslate(-2.5, 0, -2);
+    drawShape(createSphere(30, 30, 0.8), [0.8, 0.2, 0.2], 0, 1, 0);
+    
+    // Draw cylinder (green) with reflection - rotated sideways
+    modelMatrix.setTranslate(0, 0, 0);
+    modelMatrix.rotate(90, 0, 0, 1);
+    drawShape(createCylinder(30, 20, 0.6, 1.8), [0.2, 0.8, 0.2], 0, 1, 0);
+    
+    // Draw cone (blue) with procedural texture
+    modelMatrix.setTranslate(2.5, 0, -2);
+    drawShape(createCone(30, 20, 0.8, 1.8), [0.3, 0.5, 0.9], 0, 0, 1);
+}
+
+function drawShape(shape, color, useTexture, useReflection, useProcedural) {
+    initArrayBuffer(shape.vertices, 3, gl.FLOAT, 'a_Position');
+    initArrayBuffer(shape.normals, 3, gl.FLOAT, 'a_Normal');
+    initArrayBuffer(shape.texCoords, 2, gl.FLOAT, 'a_TexCoord');
+    
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, shape.indices, gl.STATIC_DRAW);
+    
+    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
+    
+    gl.uniform3f(u_DiffuseColor, color[0], color[1], color[2]);
+    gl.uniform1i(u_UseTexture, useTexture);
+    gl.uniform1i(u_UseReflection, useReflection);
+    gl.uniform1i(u_UseProcedural, useProcedural);
+    
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.uniform1i(u_Sampler, 0);
+    
+    gl.drawElements(gl.TRIANGLES, shape.indices.length, gl.UNSIGNED_SHORT, 0);
+}
+
+function initArrayBuffer(data, num, type, attribute) {
+    var buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    
+    var a_attribute = gl.getAttribLocation(gl.program, attribute);
+    gl.vertexAttribPointer(a_attribute, num, type, false, 0, 0);
+    gl.enableVertexAttribArray(a_attribute);
+}
+
+function createPlane() {
+    var vertices = new Float32Array([
+        -1, 0, -1,  1, 0, -1,  1, 0, 1,  -1, 0, 1
+    ]);
+    var normals = new Float32Array([
+        0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0
+    ]);
+    var texCoords = new Float32Array([
+        0, 0,  10, 0,  10, 10,  0, 10
+    ]);
+    var indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+    
+    return { vertices: vertices, normals: normals, texCoords: texCoords, indices: indices };
+}
+
+function createSphere(slices, stacks, radius) {
+    var vertices = [], normals = [], texCoords = [], indices = [];
+    
+    for (var i = 0; i <= stacks; i++) {
+        var phi = Math.PI * i / stacks;
+        var sinPhi = Math.sin(phi);
+        var cosPhi = Math.cos(phi);
+        
+        for (var j = 0; j <= slices; j++) {
+            var theta = 2 * Math.PI * j / slices;
+            var sinTheta = Math.sin(theta);
+            var cosTheta = Math.cos(theta);
+            
+            var x = cosTheta * sinPhi;
+            var y = cosPhi;
+            var z = sinTheta * sinPhi;
+            
+            vertices.push(radius * x, radius * y, radius * z);
+            normals.push(x, y, z);
+            texCoords.push(j / slices, i / stacks);
+        }
+    }
+    
+    for (var i = 0; i < stacks; i++) {
+        for (var j = 0; j < slices; j++) {
+            var first = i * (slices + 1) + j;
+            var second = first + slices + 1;
+            indices.push(first, second, first + 1);
+            indices.push(second, second + 1, first + 1);
+        }
+    }
+    
+    return {
+        vertices: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        texCoords: new Float32Array(texCoords),
+        indices: new Uint16Array(indices)
+    };
+}
+
+function createCylinder(slices, stacks, radius, height) {
+    var vertices = [], normals = [], texCoords = [], indices = [];
+    var indexOffset = 0;
+    
+    // Side
+    for (var i = 0; i <= stacks; i++) {
+        var y = (i / stacks - 0.5) * height;
+        for (var j = 0; j <= slices; j++) {
+            var theta = 2 * Math.PI * j / slices;
+            var sinTheta = Math.sin(theta);
+            var cosTheta = Math.cos(theta);
+            vertices.push(cosTheta * radius, y, sinTheta * radius);
+            normals.push(cosTheta, 0, sinTheta);
+            texCoords.push(j / slices, i / stacks);
+        }
+    }
+    
+    for (var i = 0; i < stacks; i++) {
+        for (var j = 0; j < slices; j++) {
+            var first = i * (slices + 1) + j;
+            var second = first + slices + 1;
+            indices.push(first, second, first + 1);
+            indices.push(second, second + 1, first + 1);
+        }
+    }
+    
+    indexOffset = vertices.length / 3;
+    
+    // Top cap
+    var topCenter = indexOffset;
+    vertices.push(0, height / 2, 0);
+    normals.push(0, 1, 0);
+    texCoords.push(0.5, 0.5);
+    indexOffset++;
+    
+    for (var j = 0; j <= slices; j++) {
+        var theta = 2 * Math.PI * j / slices;
+        vertices.push(Math.cos(theta) * radius, height / 2, Math.sin(theta) * radius);
+        normals.push(0, 1, 0);
+        texCoords.push(Math.cos(theta) * 0.5 + 0.5, Math.sin(theta) * 0.5 + 0.5);
+    }
+    
+    for (var j = 0; j < slices; j++) {
+        indices.push(topCenter, indexOffset + j, indexOffset + j + 1);
+    }
+    
+    indexOffset += slices + 1;
+    
+    // Bottom cap
+    var bottomCenter = indexOffset;
+    vertices.push(0, -height / 2, 0);
+    normals.push(0, -1, 0);
+    texCoords.push(0.5, 0.5);
+    indexOffset++;
+    
+    for (var j = 0; j <= slices; j++) {
+        var theta = 2 * Math.PI * j / slices;
+        vertices.push(Math.cos(theta) * radius, -height / 2, Math.sin(theta) * radius);
+        normals.push(0, -1, 0);
+        texCoords.push(Math.cos(theta) * 0.5 + 0.5, Math.sin(theta) * 0.5 + 0.5);
+    }
+    
+    for (var j = 0; j < slices; j++) {
+        indices.push(bottomCenter, indexOffset + j + 1, indexOffset + j);
+    }
+    
+    return {
+        vertices: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        texCoords: new Float32Array(texCoords),
+        indices: new Uint16Array(indices)
+    };
+}
+
+function createCone(slices, stacks, radius, height) {
+    var vertices = [], normals = [], texCoords = [], indices = [];
+    
+    // Side
+    for (var i = 0; i <= stacks; i++) {
+        var y = (i / stacks - 0.5) * height;
+        var r = radius * (1 - i / stacks);
+        
+        for (var j = 0; j <= slices; j++) {
+            var theta = 2 * Math.PI * j / slices;
+            var sinTheta = Math.sin(theta);
+            var cosTheta = Math.cos(theta);
+            
+            vertices.push(cosTheta * r, y, sinTheta * r);
+            
+            var slant = Math.sqrt(radius * radius + height * height);
+            var nx = cosTheta * height / slant;
+            var ny = radius / slant;
+            var nz = sinTheta * height / slant;
+            normals.push(nx, ny, nz);
+            texCoords.push(j / slices, i / stacks);
+        }
+    }
+    
+    for (var i = 0; i < stacks; i++) {
+        for (var j = 0; j < slices; j++) {
+            var first = i * (slices + 1) + j;
+            var second = first + slices + 1;
+            indices.push(first, second, first + 1);
+            indices.push(second, second + 1, first + 1);
+        }
+    }
+    
+    var indexOffset = vertices.length / 3;
+    
+    // Bottom cap
+    var bottomCenter = indexOffset;
+    vertices.push(0, -height / 2, 0);
+    normals.push(0, -1, 0);
+    texCoords.push(0.5, 0.5);
+    indexOffset++;
+    
+    for (var j = 0; j <= slices; j++) {
+        var theta = 2 * Math.PI * j / slices;
+        vertices.push(Math.cos(theta) * radius, -height / 2, Math.sin(theta) * radius);
+        normals.push(0, -1, 0);
+        texCoords.push(Math.cos(theta) * 0.5 + 0.5, Math.sin(theta) * 0.5 + 0.5);
+    }
+    
+    for (var j = 0; j < slices; j++) {
+        indices.push(bottomCenter, indexOffset + j + 1, indexOffset + j);
+    }
+    
+    return {
+        vertices: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        texCoords: new Float32Array(texCoords),
+        indices: new Uint16Array(indices)
+    };
+}
+
+</script>
+
+</body>
+</html>

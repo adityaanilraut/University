@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Title</title>
+    <script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/source/glsim.js"></script>
+    <script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/webgl-utils.js"></script>
+    <script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/webgl-debug.js"></script>
+    <script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/cuon-matrix.js"></script>
+    <script src="https://www.ecst.csuchico.edu/~oal-saadi/Graphics/lib/cuon-utils.js"></script>
+    <script>
+        //Javascript Code Here!
+
+        var angle = 0.0;
+
+        function main() {
+            console.log("Hello World");
+            var canvas = document.getElementById('webgl');
+            var gl = getWebGLContext(canvas);
+
+            gl.clearColor(0.5, 0.5, 0.5, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+        function display() {
+      glClearColor(0.5, 0.5, 0.5, 1);
+      glClear(GL_COLOR_BUFFER_BIT);
+
+      // Triangle spinning
+      const trix = 0.25;
+      const triy = (0.4 + 0.2 + 0.7) / 3.0; 
+
+      glPushMatrix();
+        glTranslatef(trix, triy, 0);
+        glRotatef(angle, 0, 0, 1);
+        glTranslatef(-trix, -triy, 0);
+
+        glBegin(GL_TRIANGLES);   //Colorful Triangle 
+          glColor3f(0, 1, 0);  glVertex2f(0.0, 0.2);
+          glColor3f(0, 0, 1);  glVertex2f( 0.5, 0.2);
+          glColor3f(1, 0, 0);  glVertex2f( 0.25, 0.7);
+        glEnd();
+      glPopMatrix();
+
+      // Square spinning
+      const sqx = (-0.8 + -0.3) / 2.0; 
+      const sqy = ( 0.2 +  0.7) / 2.0; 
+
+      glPushMatrix();
+        glTranslatef(sqx, sqy, 0);
+        glRotatef(angle, 0, 0, 1);
+        glTranslatef(-sqx, -sqy, 0);
+
+        glBegin(GL_POLYGON);  //Colorful square 
+          glColor3ub(  0,  0,255); glVertex2f(-0.8, 0.2);
+          glColor3ub(  0,255,255); glVertex2f(-0.8, 0.7);
+          glColor3ub(255,  0,255); glVertex2f(-0.3, 0.7);
+          glColor3ub(255,255,255); glVertex2f(-0.3, 0.2);
+        glEnd();
+      glPopMatrix();
+
+      const sqx1 = (0.4 + -0.4) / 2.0; 
+      const sqy1 = ( -0.1 +  -0.8) / 2.0; 
+        glPushMatrix();
+        glTranslatef(sqx1, sqy1, 0);
+        glRotatef(angle, 0, 0, 1);
+        glTranslatef(-sqx1, -sqy1, 0);
+
+        glBegin(GL_POLYGON);  //black and white squares
+            glColor3ub(0, 0, 0);
+            glVertex2f( 0.50,  0.00);
+            glVertex2f( 0.50, -1.00);
+            glVertex2f(-0.50, -1.00);
+            glVertex2f(-0.50,  0.00);
+        glEnd();
+        glPopMatrix();
+
+        glPushMatrix(); //black and white squares
+        glTranslatef(sqx1, sqy1, 0);
+        glRotatef(angle, 0, 0, 1);
+        glTranslatef(-sqx1, -sqy1, 0);
+        glBegin(GL_POLYGON);
+            glColor3ub(255, 255,255);
+            glVertex2f( 0.4, -0.1);
+            glVertex2f( 0.4, -0.9);
+            glVertex2f(-0.4, -0.9);
+            glVertex2f(-0.4, -0.1);
+        glEnd();
+        glPopMatrix();
+
+        glPushMatrix(); //black and white squares
+        glTranslatef(sqx1, sqy1, 0);
+        glRotatef(angle, 0, 0, 1);
+        glTranslatef(-sqx1, -sqy1, 0);
+        glBegin(GL_POLYGON);
+            glColor3ub(0, 0, 0);
+            glVertex2f( 0.3, -0.2);
+            glVertex2f( 0.3, -0.8);
+            glVertex2f(-0.3, -0.8);
+            glVertex2f(-0.3, -0.2);
+        glEnd();
+        glPopMatrix();
+
+        glPushMatrix(); //black and white squares
+        glTranslatef(sqx1, sqy1, 0);
+        glRotatef(angle, 0, 0, 1);
+        glTranslatef(-sqx1, -sqy1, 0);
+        glBegin(GL_POLYGON);
+            glColor3ub(255, 255,255);
+            glVertex2f( 0.2, -0.3);
+            glVertex2f( 0.2, -0.7);
+            glVertex2f(-0.2, -0.7);
+            glVertex2f(-0.2, -0.3);
+        glEnd();
+        glPopMatrix();
+
+        glPushMatrix(); //black and white squares
+        glTranslatef(sqx1, sqy1, 0);
+        glRotatef(angle, 0, 0, 1);
+        glTranslatef(-sqx1, -sqy1, 0);
+        glBegin(GL_POLYGON);
+            glColor3ub(0, 0, 0);
+            glVertex2f(0.1, -0.4); 
+            glVertex2f(0.1, -0.6); 
+            glVertex2f(-0.1, -0.6); 
+            glVertex2f(-0.1, -0.4);
+        glEnd();
+        glPopMatrix();
+      glFlush();
+    }
+    function init() {
+      glsimUse("webgl");
+      
+      display();
+    }
+    function actionright() {
+        angle -= 10;
+        display();
+    }
+    function actionleft() {
+        angle += 10;
+        display();
+    }
+    document.addEventListener('keydown', function(event) {
+    if (event.key === 'ArrowLeft') {
+        actionleft();
+    } else if (event.key === 'ArrowRight') {
+        actionright();
+    }
+    });
+    </script>
+</head>
+<!-- When page loads, call main() in Javascript. -->
+<body onload="main();init();">
+    <!-- The Window that displays graphics. -->
+    <canvas id="webgl" width="400" height="400"></canvas>
+    <br> <!-- Newline -->
+    <!-- Pressing this button calls function action()" in the
+Javascript of the script tag. -->
+    <button type="button" onclick="actionleft()">Left</button>
+    <button type="button" onclick="actionright()">Right</button>
+</body>
+</html>

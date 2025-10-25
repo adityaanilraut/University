@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Oasis — Perspective, Camera, Procedural Sand, Animated Ripples</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body>
+<div id="wrap">
+
+  <div id="glwrap"><canvas id="webgl" width="600" height="600"></canvas></div>
+  <div id="controls">
+    <div class="button-row">
+      <button id="btnBack">Back</button>
+      <button id="btnForward">Forward</button>
+      <button id="btnLeft">Left</button>
+      <button id="btnRight">Right</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Matrix utilities ----------
+function mat4Identity(){ return [1,0,0,0,  0,1,0,0,  0,0,1,0,  0,0,0,1]; }
+function mat4Multiply(a,b){
+  const out = new Array(16);
+  for(let r=0;r<4;r++){
+    for(let c=0;c<4;c++){
+      out[c+4*r] =
+        a[4*r+0]*b[c+0] + a[4*r+1]*b[c+4] + a[4*r+2]*b[c+8] + a[4*r+3]*b[c+12];
+    }
+  }
+  return out;
+}
+function mat4Translate(tx,ty,tz){
+  const m = mat4Identity();
+  m[12]=tx; m[13]=ty; m[14]=tz; return m;
+}
+function mat4Scale(sx,sy,sz){
+  const m = mat4Identity();
+  m[0]=sx; m[5]=sy; m[10]=sz; return m;
+}
+function mat4RotateX(deg){
+  const r = deg*Math.PI/180; const c=Math.cos(r), s=Math.sin(r);
+  const m = mat4Identity(); m[5]=c; m[6]=s; m[9]=-s; m[10]=c; return m;
+}
+function mat4RotateY(deg){
+  const r = deg*Math.PI/180; const c=Math.cos(r), s=Math.sin(r);
+  const m = mat4Identity(); m[0]=c; m[2]=-s; m[8]=s; m[10]=c; return m;
+}
+function perspective(fovyDeg, aspect, near, far){
+  const f = 1/Math.tan((fovyDeg*Math.PI/180)/2);
+  const nf = 1/(near - far);
+  return [
+    f/aspect,0,0,0,
+    0,f,0,0,
+    0,0,(far+near)*nf,-1,
+    0,0,(2*far*near)*nf,0
+  ];
+}
+function normalize3(x,y,z){ const l=Math.hypot(x,y,z)||1; return [x/l,y/l,z/l]; }
+function lookAt(eye, center, up){
+  const [ex,ey,ez]=eye, [cx,cy,cz]=center, [ux,uy,uz]=up;
+  let zx=ex-cx, zy=ey-cy, zz=ez-cz;
+  [zx,zy,zz]=normalize3(zx,zy,zz);
+  let xx=uy*zz-uz*zy, xy=uz*zx-ux*zz, xz=ux*zy-uy*zx;
+  [xx,xy,xz]=normalize3(xx,xy,xz);
+  const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+
+  return [
+     xx, yx, zx, 0,
+     xy, yy, zy, 0,
+     xz, yz, zz, 0,
+    -(xx*ex+xy*ey+xz*ez),
+    -(yx*ex+yy*ey+yz*ez),
+    -(zx*ex+zy*ey+zz*ez),
+     1
+  ];
+}
+
+// ---------- Shaders ----------
+const VERT_SRC = `
+attribute vec3 a_Position;
+uniform mat4 u_Model, u_View, u_Proj;
+varying vec3 v_Position;
+void main(){
+  v_Position = a_Position;
+  gl_Position = u_Proj * u_View * u_Model * vec4(a_Position, 1.0);
+}
+`;
+
+// Sand fragment shader using provided noise code
+const FRAG_SAND = `
+precision mediump float;
+varying vec3 v_Position;
+uniform float u_Time;
+
+// Provided noise functions (exact as specified in requirements)
+vec3 permute(vec3 x){ 
+  return mod(((x*34.0)+1.0)*x, 289.0); 
+} 
+
+vec3 taylorInvSqrt(vec3 r){ 
+  return 1.79284291400159 - 0.85373472095314 * r; 
+} 
+
+float noise(vec2 P){ 
+  const vec2 C = vec2(0.21132486540518713, 0.36602540378443859); 
+  vec2 i = floor(P + dot(P, C.yy) );
+  vec2 x0 = P - i + dot(i, C.xx);  
+  vec2 i1;  
+  i1.x = step( x0.y, x0.x );  
+  i1.y = 1.0 - i1.x;  
+  vec4 x12 = x0.xyxy +  vec4( C.xx, C.xx * 2.0 - 1.0);  
+  x12.xy -= i1;  
+  i = mod(i, 289.0);  
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 )) + i.x + vec3(0.0, i1.x, 1.0 ));  
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);  
+  m = m*m;  
+  m = m*m;  
+  vec3 x = fract(p*(1.0/41.0)) * 2.0 - 1.0;  
+  vec3 gy = abs(x)-0.5;  
+  vec3 ox = floor(x + 0.5);  
+  vec3 gx = x - ox;  
+  m *= taylorInvSqrt( gx*gx + gy*gy );  
+  vec3 g;  
+  g.x = gx.x * x0.x + gy.x * x0.y;  
+  g.yz = gx.yz * x12.xz + gy.yz * x12.yw;  
+  return 130.0 * dot(m, g);  
+}  
+
+float turb(float cx, float cy){  
+   return .5 * noise(vec2(cx,cy)) + .25 
+       * noise(vec2(2.0*cx,2.0*cy)) + .125 
+       * noise(vec2(4.0*cx,4.0*cy));  
+}
+
+void main(){
+  float cx = v_Position.x;
+  float cy = v_Position.y;
+  
+  float m = (1.0 + sin((cx + turb(cx,cy) * 2.0) * 5.0)) * .5;
+  float n = noise(vec2(cx*200.0,cy*200.0)); 
+  m = (m + n) * .1;
+  
+  // Enhanced sand color variation
+  vec3 baseColor = vec3(.9+m, .8*.9+m, .5*.9+m);
+  gl_FragColor = vec4(baseColor, 1.0);
+}
+`;
+
+// Water ripple fragment shader with transparency (extra credit)
+const FRAG_RIPPLE = `
+precision mediump float;
+varying vec3 v_Position;
+uniform float u_Time;
+
+void main(){
+  // Distance from center for concentric ripples
+  float r = length(v_Position.xy);
+
+  // Animated ripple parameters
+  float freq = 18.0;     // number of rings
+  float speed = 2.5;     // animation speed
+  float time = u_Time * 0.001;
+  
+  // Create animated ripple effect
+  float wave = sin(freq * r - speed * time);
+  
+  // Base water colors
+  vec3 deepBlue = vec3(0.08, 0.25, 0.85);
+  vec3 lightBlue = vec3(0.15, 0.45, 0.95);
+  
+  // Center glow effect
+  float centerGlow = smoothstep(0.0, 0.1, 0.15 - r);
+  vec3 color = mix(deepBlue, lightBlue, 0.5 + 0.4*wave) + 0.2*centerGlow;
+  
+  // EXTRA CREDIT: Transparency between ripples
+  // Make only the ripple crests visible, with transparency between
+  float rippleMask = abs(wave);
+  float alpha = smoothstep(0.3, 0.8, rippleMask) * 0.9;
+  
+  gl_FragColor = vec4(color, alpha);
+}
+`;
+
+// ---------- WebGL setup ----------
+const canvas = document.getElementById('webgl');
+const gl = canvas.getContext('webgl');
+if(!gl){ alert('WebGL not supported'); }
+
+// Enable depth testing and blending for transparency (extra credit)
+gl.enable(gl.DEPTH_TEST);
+gl.enable(gl.BLEND);
+gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+gl.clearColor(0.05, 0.15, 0.35, 1);
+
+// Shader compilation helpers
+function compile(gl, type, src){
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
+    console.error(gl.getShaderInfoLog(sh));
+    throw new Error('Shader compile failed.');
+  }
+  return sh;
+}
+function link(gl, vsSrc, fsSrc){
+  const vs = compile(gl, gl.VERTEX_SHADER, vsSrc);
+  const fs = compile(gl, gl.FRAGMENT_SHADER, fsSrc);
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+    console.error(gl.getProgramInfoLog(prog));
+    throw new Error('Program link failed.');
+  }
+  return prog;
+}
+
+// Create shader programs
+const progSand   = link(gl, VERT_SRC, FRAG_SAND);
+const progRipple = link(gl, VERT_SRC, FRAG_RIPPLE);
+
+// Quad geometry (XY plane)
+const positions = new Float32Array([
+  -0.5,  0.5, 0.0,
+  -0.5, -0.5, 0.0,
+   0.5,  0.5, 0.0,
+   0.5, -0.5, 0.0
+]);
+const vbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+function bindPositionAttrib(program){
+  const loc = gl.getAttribLocation(program, 'a_Position');
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(loc);
+}
+
+function getCommonUniforms(program){
+  return {
+    u_Model : gl.getUniformLocation(program, 'u_Model'),
+    u_View  : gl.getUniformLocation(program, 'u_View'),
+    u_Proj  : gl.getUniformLocation(program, 'u_Proj'),
+    u_Time  : gl.getUniformLocation(program, 'u_Time')
+  };
+}
+const U_SAND   = getCommonUniforms(progSand);
+const U_RIPPLE = getCommonUniforms(progRipple);
+
+// ---------- Camera controls ----------
+let eye = { x: 0.0, y: 6.0, z: 18.0 };
+const center = { x: 0.0, y: 0.0, z: 0.0 };
+const up = { x: 0.0, y: 1.0, z: 0.0 };
+const moveSpeed = 0.4;
+
+function move(dirX, dirZ) {
+  // Calculate forward and right vectors in XZ plane
+  const fwd = normalize3(center.x-eye.x, 0.0, center.z-eye.z);
+  const right = normalize3(up.y*fwd[2], 0.0, -up.y*fwd[0]);
+  
+  // Apply movement
+  eye.x += fwd[0]*dirX*moveSpeed + right[0]*dirZ*moveSpeed;
+  eye.z += fwd[2]*dirX*moveSpeed + right[2]*dirZ*moveSpeed;
+  
+  // Keep camera at reasonable distance from center
+  const r = Math.hypot(eye.x-center.x, eye.z-center.z);
+  const minR = 1.5, maxR = 15.0;
+  if(r < minR || r > maxR){
+    const k = r < minR ? minR/r : maxR/r;
+    eye.x = center.x + (eye.x-center.x)*k;
+    eye.z = center.z + (eye.z-center.z)*k;
+  }
+}
+
+// Button controls
+document.getElementById('btnForward').onclick = ()=> move(+1, 0);
+document.getElementById('btnBack').onclick    = ()=> move(-1, 0);
+document.getElementById('btnLeft').onclick    = ()=> move( 0,-1);
+document.getElementById('btnRight').onclick   = ()=> move( 0,+1);
+
+// Keyboard controls
+window.addEventListener('keydown', (e)=>{
+  switch(e.key) {
+    case 'ArrowUp':    move(+1, 0); e.preventDefault(); break;
+    case 'ArrowDown':  move(-1, 0); e.preventDefault(); break;
+    case 'ArrowLeft':  move( 0,-1); e.preventDefault(); break;
+    case 'ArrowRight': move( 0,+1); e.preventDefault(); break;
+  }
+});
+
+// ---------- Scene rendering ----------
+function drawScene(timeMs){
+  const time = timeMs || 0;
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // View and Perspective matrices (requirement)
+  const view = lookAt([eye.x, eye.y, eye.z], [center.x, center.y, center.z], [up.x, up.y, up.z]);
+  const proj = perspective(45, canvas.width/canvas.height, 0.1, 100.0);
+
+  // --- Draw SAND plane (ground) ---
+  gl.useProgram(progSand);
+  bindPositionAttrib(progSand);
+  
+  let sandModel = mat4Identity();
+  sandModel = mat4Multiply(sandModel, mat4Scale(20.0, 12.0, 1.0));  // wider, less deep plane
+  sandModel = mat4Multiply(sandModel, mat4RotateX(-90));            // vertical angle
+  sandModel = mat4Multiply(sandModel, mat4Translate(0.0, -1.2, 0.0)); // lower position
+
+  gl.uniformMatrix4fv(U_SAND.u_Model, false, new Float32Array(sandModel));
+  gl.uniformMatrix4fv(U_SAND.u_View , false, new Float32Array(view));
+  gl.uniformMatrix4fv(U_SAND.u_Proj , false, new Float32Array(proj));
+  gl.uniform1f(U_SAND.u_Time, time);
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  // --- Draw WATER RIPPLES (above sand) ---
+  gl.useProgram(progRipple);
+  bindPositionAttrib(progRipple);
+  
+  let rippleModel = mat4Identity();
+  rippleModel = mat4Multiply(rippleModel, mat4Scale(4.5, 4.5, 1.0));   // smaller ripple size
+  rippleModel = mat4Multiply(rippleModel, mat4Translate(0.0, 1.8, -2.0)); // higher and back
+
+  gl.uniformMatrix4fv(U_RIPPLE.u_Model, false, new Float32Array(rippleModel));
+  gl.uniformMatrix4fv(U_RIPPLE.u_View , false, new Float32Array(view));
+  gl.uniformMatrix4fv(U_RIPPLE.u_Proj , false, new Float32Array(proj));
+  gl.uniform1f(U_RIPPLE.u_Time, time);
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  requestAnimationFrame(drawScene);
+}
+
+// Start the animation loop
+requestAnimationFrame(drawScene);
+</script>
+</body>
+</html>
