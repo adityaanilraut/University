@@ -1,0 +1,89 @@
+.lobby-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-xl);
+}
+
+.lobby-grid .card {
+  min-height: 300px;
+}
+
+.my-challenges-card {
+  grid-column: 1 / -1;
+}
+
+.header-icon {
+  font-size: 1.125rem;
+  color: var(--color-accent);
+}
+
+.player-list,
+.challenge-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.player-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.player-name {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.player-name::before {
+  content: '♟';
+  color: var(--color-accent);
+}
+
+.challenge-item {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+}
+
+.challenge-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.challenger-name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.challenger-name::before {
+  content: '⚔️ ';
+}
+
+.challenge-time {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.challenge-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  width: 100%;
+}
+
+.challenge-actions .btn {
+  flex: 1;
+}
+
+@media (max-width: 768px) {
+  .lobby-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .my-challenges-card {
+    grid-column: 1;
+  }
+}
